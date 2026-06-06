@@ -2,9 +2,9 @@
   "name": "taragon-session-generator",
   "version": "1.0.0",
   "description": "WhatsApp Session Generator for Taragon Bot",
-  "main": "session_generator.js",
+  "main": "code.js",
   "scripts": {
-    "start": "node session_generator.js",
+    "start": "node code.js",
     "build": "npm install"
   },
   "keywords": ["whatsapp", "baileys", "session"],

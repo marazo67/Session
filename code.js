@@ -1,4 +1,4 @@
-// session_generator.js
+// session_generator.js – Fully working with user phone input
 const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
@@ -9,7 +9,6 @@ const path = require('path');
 const crypto = require('crypto');
 
 const PORT = process.env.PORT || 3000;
-const OWNER_PHONE = '27785028986'; // digits only
 const SESSIONS_DIR = path.join(__dirname, 'sessions');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
@@ -25,7 +24,7 @@ app.use(express.json());
 
 app.get('/', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
-// Frontend
+// Frontend HTML with phone input + socket.emit()
 const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -41,6 +40,10 @@ body{font-family:'Inter',sans-serif;background:#0a0a0f;min-height:100vh;display:
 .card{position:relative;z-index:10;background:rgba(255,255,255,0.03);backdrop-filter:blur(30px);border:1px solid rgba(255,255,255,0.08);border-radius:24px;padding:40px;max-width:500px;width:92%;box-shadow:0 25px 50px rgba(0,0,0,0.5)}
 .logo{font-family:'Space Grotesk',sans-serif;font-size:28px;font-weight:700;text-align:center;background:linear-gradient(135deg,#667eea,#764ba2,#f093fb);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
 .subtitle{text-align:center;color:rgba(255,255,255,0.6);font-size:14px;margin-bottom:24px}
+.input-group{margin:20px 0;text-align:left}
+.input-group label{color:rgba(255,255,255,0.7);font-size:13px;margin-bottom:8px;display:block}
+.phone-input{width:100%;padding:14px;border-radius:14px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:white;font-size:16px;font-family:'Inter',monospace;text-align:center}
+.phone-input:focus{outline:none;border-color:#667eea}
 .code-box{text-align:center;margin:24px 0}
 .code-label{color:rgba(255,255,255,0.6);font-size:12px;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
 .code{font-family:'Space Grotesk',monospace;font-size:48px;font-weight:700;letter-spacing:14px;color:#667eea;padding:24px 16px;background:rgba(102,126,234,0.08);border-radius:16px;border:2px dashed rgba(102,126,234,0.3);text-shadow:0 0 40px rgba(102,126,234,0.5);user-select:all;min-height:100px;display:flex;align-items:center;justify-content:center}
@@ -66,141 +69,240 @@ body{font-family:'Inter',sans-serif;background:#0a0a0f;min-height:100vh;display:
 <div class="card">
 <div class="logo">🇻🇦 TARAGON SQUAD TRS</div>
 <div class="subtitle">Session Generator – Pair Your Number</div>
+
+<div class="input-group">
+<label>📱 Your WhatsApp Number (international, no +)</label>
+<input type="tel" id="phone" class="phone-input" placeholder="e.g. 27785028986" value="">
+</div>
+
 <div class="code-box">
 <div class="code-label">Your 8-Digit Pairing Code</div>
-<div class="code" id="code">Click Generate</div>
+<div class="code" id="code">---</div>
 </div>
-<button class="btn btn-gen" id="genBtn" onclick="generateCode()">🔑 Generate Pairing Code</button>
-<button class="btn btn-copy" id="copyBtn" onclick="copyCode()" style="display:none">📋 Copy Code</button>
+
+<button class="btn btn-gen" id="genBtn">🔑 Generate Pairing Code</button>
+<button class="btn btn-copy" id="copyBtn" style="display:none">📋 Copy Code</button>
+
 <div class="steps">
 <div class="step"><span class="step-num">1</span> Open WhatsApp on your phone</div>
 <div class="step"><span class="step-num">2</span> Tap ⋮ → <strong>Linked Devices</strong></div>
 <div class="step"><span class="step-num">3</span> Tap <strong>Link a Device</strong></div>
 <div class="step"><span class="step-num">4</span> Enter the code shown above</div>
 </div>
-<p class="status" id="status">Ready to generate</p>
+
+<p class="status" id="status">Enter your phone number and generate code</p>
 <div class="session-id" id="sessionId"></div>
 </div>
+
 <script src="/socket.io/socket.io.js"></script>
 <script>
-const socket=io();let currentCode='';let generating=false;
+const socket = io();
+let currentCode = '';
+let generating = false;
 
-async function generateCode(){
-if(generating)return;generating=true;
-const btn=document.getElementById('genBtn');
-btn.disabled=true;btn.textContent='Generating...';
-document.getElementById('status').innerHTML='<span class="spinner"></span>Requesting code...';
-document.getElementById('copyBtn').style.display='none';
-await fetch('/generate',{method:'POST'});
+const genBtn = document.getElementById('genBtn');
+const copyBtn = document.getElementById('copyBtn');
+const codeDiv = document.getElementById('code');
+const statusDiv = document.getElementById('status');
+const sessionIdDiv = document.getElementById('sessionId');
+const phoneInput = document.getElementById('phone');
+
+genBtn.addEventListener('click', () => {
+    let phone = phoneInput.value.trim();
+    if (!phone) {
+        statusDiv.innerHTML = '<span class="error">❌ Please enter your phone number</span>';
+        return;
+    }
+    // remove all non-digits
+    phone = phone.replace(/\\D/g, '');
+    if (phone.length < 10) {
+        statusDiv.innerHTML = '<span class="error">❌ Invalid number – include country code (e.g. 2778...)</span>';
+        return;
+    }
+    if (generating) return;
+    generating = true;
+    genBtn.disabled = true;
+    genBtn.textContent = 'Generating...';
+    statusDiv.innerHTML = '<span class="spinner"></span>Requesting code for +' + phone + '...';
+    copyBtn.style.display = 'none';
+    codeDiv.textContent = '⏳ ...';
+    sessionIdDiv.textContent = '';
+    socket.emit('generate', { phoneNumber: phone });
+});
+
+socket.on('code', (data) => {
+    codeDiv.textContent = data.code;
+    currentCode = data.code;
+    statusDiv.innerHTML = '<span class="success">✅ Code ready! Enter it in WhatsApp within 2 minutes</span>';
+    copyBtn.style.display = 'block';
+    genBtn.style.display = 'none';
+});
+
+socket.on('sessionReady', (data) => {
+    statusDiv.innerHTML = '<span class="success">✅ Linked! Session ID sent to your WhatsApp</span>';
+    codeDiv.textContent = '✅ LINKED';
+    sessionIdDiv.textContent = 'Session ID: ' + data.sessionId;
+    currentCode = '';
+    resetUiAfterPairing();
+});
+
+socket.on('codeExpired', () => {
+    statusDiv.innerHTML = '<span class="error">⏰ Code expired. Click Generate again</span>';
+    codeDiv.textContent = 'EXPIRED';
+    resetBtn();
+});
+
+socket.on('error', (msg) => {
+    statusDiv.innerHTML = '<span class="error">❌ ' + msg + '</span>';
+    resetBtn();
+});
+
+function resetBtn() {
+    generating = false;
+    genBtn.disabled = false;
+    genBtn.textContent = '🔑 Generate Pairing Code';
+    genBtn.style.display = 'block';
+    copyBtn.style.display = 'none';
 }
 
-socket.on('code',(data)=>{
-document.getElementById('code').textContent=data.code;
-currentCode=data.code;
-document.getElementById('status').innerHTML='<span class="success">✅ Code ready! Enter in WhatsApp within 2min</span>';
-document.getElementById('copyBtn').style.display='block';
-document.getElementById('genBtn').style.display='none';
-});
-
-socket.on('sessionReady',(data)=>{
-document.getElementById('status').innerHTML='<span class="success">✅ Linked! Session saved & sent to your WhatsApp</span>';
-document.getElementById('code').textContent='✅ LINKED';
-document.getElementById('sessionId').textContent='Session ID: '+data.sessionId;
-currentCode='';
-});
-
-socket.on('codeExpired',()=>{
-document.getElementById('status').innerHTML='<span class="error">⏰ Code expired. Click Generate again</span>';
-document.getElementById('code').textContent='EXPIRED';
-resetBtn();
-});
-
-socket.on('error',(msg)=>{
-document.getElementById('status').innerHTML='<span class="error">❌ '+msg+'</span>';
-resetBtn();
-});
-
-function resetBtn(){
-generating=false;
-document.getElementById('genBtn').disabled=false;
-document.getElementById('genBtn').textContent='🔑 Generate Pairing Code';
-document.getElementById('genBtn').style.display='block';
+function resetUiAfterPairing() {
+    generating = false;
+    genBtn.disabled = false;
+    genBtn.textContent = '🔑 Generate Pairing Code';
+    genBtn.style.display = 'block';
+    copyBtn.style.display = 'none';
+    phoneInput.value = '';
 }
 
-function copyCode(){
-if(!currentCode)return;
-navigator.clipboard.writeText(currentCode).then(()=>{
-const btn=document.getElementById('copyBtn');
-btn.textContent='✅ Copied!';
-setTimeout(()=>btn.textContent='📋 Copy Code',2000);
-});
+function copyCode() {
+    if (!currentCode) return;
+    navigator.clipboard.writeText(currentCode).then(() => {
+        copyBtn.textContent = '✅ Copied!';
+        setTimeout(() => copyBtn.textContent = '📋 Copy Code', 2000);
+    });
 }
+copyBtn.onclick = copyCode;
 </script>
 </body>
 </html>`;
 
 fs.writeFileSync(path.join(PUBLIC_DIR, 'index.html'), html);
 
-// Pairing logic
-async function startPairing(){
-const sessionId='trs-'+crypto.randomBytes(6).toString('hex');
-const sessionDir=path.join(SESSIONS_DIR,sessionId);
-if(!fs.existsSync(sessionDir))fs.mkdirSync(sessionDir,{recursive:true});
+// ------------------- PAIRING LOGIC (per socket) -------------------
+// Each client's 'generate' event starts an independent pairing flow
+io.on('connection', (socket) => {
+    console.log(`🟢 Client connected: ${socket.id}`);
 
-const {state,saveCreds}=await useMultiFileAuthState(sessionDir);
-const {version}=await fetchLatestBaileysVersion();
+    socket.on('generate', async (data) => {
+        let { phoneNumber } = data;
+        if (!phoneNumber) {
+            socket.emit('error', 'Phone number missing');
+            return;
+        }
+        // sanitize: only digits
+        phoneNumber = phoneNumber.replace(/\D/g, '');
+        if (phoneNumber.length < 10) {
+            socket.emit('error', 'Invalid phone number (need country code, e.g. 2778...)');
+            return;
+        }
 
-const sock=makeWASocket({
-version,
-auth:{creds:state.creds,keys:makeCacheableSignalKeyStore(state.keys,pino({level:'silent'}))},
-printQRInTerminal:false,
-logger:pino({level:'silent'}),
-browser:Browsers.macOS('Chrome'),
-markOnlineOnConnect:false,
-keepAliveIntervalMs:10000, // keeps Render socket alive
+        // Create unique session folder for this pairing attempt
+        const sessionId = `trs_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+        const sessionDir = path.join(SESSIONS_DIR, sessionId);
+        fs.mkdirSync(sessionDir, { recursive: true });
+
+        let sock = null;
+        let codeTimer = null;
+        let isPaired = false;
+
+        try {
+            const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+            const { version } = await fetchLatestBaileysVersion();
+
+            sock = makeWASocket({
+                version,
+                auth: {
+                    creds: state.creds,
+                    keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
+                },
+                printQRInTerminal: false,
+                logger: pino({ level: 'silent' }),
+                browser: Browsers.macOS('Chrome'),
+                markOnlineOnConnect: false,
+                keepAliveIntervalMs: 10000
+            });
+
+            // Request pairing code for the user's number
+            const code = await sock.requestPairingCode(phoneNumber);
+            console.log(`🔑 Pairing code for ${phoneNumber}: ${code}`);
+            socket.emit('code', { code });
+
+            // Set expiry: 2 minutes
+            codeTimer = setTimeout(() => {
+                if (!isPaired) {
+                    console.log(`⏰ Code expired for ${phoneNumber}`);
+                    socket.emit('codeExpired');
+                    cleanup();
+                }
+            }, 120000);
+
+            // Listen for connection success
+            sock.ev.on('connection.update', async (update) => {
+                const { connection } = update;
+                if (connection === 'open' && !isPaired) {
+                    isPaired = true;
+                    clearTimeout(codeTimer);
+
+                    const botJid = sock.user.id.split(':')[0];
+                    console.log(`✅ Paired +${botJid} with session ${sessionId}`);
+
+                    await saveCreds();
+
+                    // Send session ID to the user's own WhatsApp number
+                    const userJid = `${phoneNumber}@s.whatsapp.net`;
+                    await sock.sendMessage(userJid, {
+                        text: `🔐 *Your Taragon Bot Session ID*\n\n\`${sessionId}\`\n\nSave this ID and use it in the main bot configuration.\n\n⚠️ Never share it with anyone.`
+                    }).catch(err => console.error('Failed to send session message:', err));
+
+                    socket.emit('sessionReady', { sessionId });
+
+                    // Close the connection gracefully after a short delay
+                    setTimeout(() => sock?.end(), 2000);
+                }
+            });
+
+            sock.ev.on('creds.update', saveCreds);
+
+            // Error handling
+            sock.ev.on('connection.update', (update) => {
+                if (update.lastDisconnect?.error) {
+                    console.error('Connection error:', update.lastDisconnect.error);
+                    if (!isPaired) {
+                        socket.emit('error', 'Pairing failed: ' + update.lastDisconnect.error.message);
+                        cleanup();
+                    }
+                }
+            });
+
+        } catch (err) {
+            console.error('Pairing init error:', err);
+            socket.emit('error', err.message || 'Unable to start pairing');
+            cleanup();
+        }
+
+        function cleanup() {
+            if (codeTimer) clearTimeout(codeTimer);
+            if (sock && !isPaired) sock.end();
+            // delete session folder only if not paired
+            if (!isPaired) {
+                fs.rmSync(sessionDir, { recursive: true, force: true });
+            }
+        }
+    });
+
+    socket.on('disconnect', () => {
+        console.log(`🔴 Client disconnected: ${socket.id}`);
+    });
 });
 
-try{
-const code=await sock.requestPairingCode(OWNER_PHONE);
-console.log(`🔑 Pairing code: ${code}`);
-io.emit('code',{code});
-}catch(e){
-console.error('Pairing error:',e.message);
-io.emit('error',e.message);
-return;
-}
-
-let connected=false;
-const timeout=setTimeout(()=>{
-if(!connected){
-console.log('⏰ Code expired');
-io.emit('codeExpired');
-fs.rmSync(sessionDir,{recursive:true,force:true});
-}
-},120000);
-
-sock.ev.on('connection.update',async(update)=>{
-const{connection}=update;
-if(connection==='open'&&!connected){
-connected=true;clearTimeout(timeout);
-const botNumber=sock.user.id.split(':')[0];
-console.log(`✅ Connected as +${botNumber}`);
-await saveCreds();
-const ownerJid=`${OWNER_PHONE}@s.whatsapp.net`;
-await sock.sendMessage(ownerJid,{text:`🔑 *Your Session ID:* \`${sessionId}\`\n\nPaste this into your main bot. Keep it safe!`}).catch(()=>{});
-io.emit('sessionReady',{sessionId});
-console.log(`🎉 Session stored: ${sessionDir}`);
-sock.end();
-}
-});
-
-sock.ev.on('creds.update',saveCreds);
-}
-
-// API endpoint
-app.post('/generate',async(req,res)=>{
-startPairing();
-res.json({status:'generating'});
-});
-
-server.listen(PORT,()=>console.log(`🌐 Web panel: http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`🌐 Web panel running on http://localhost:${PORT}`));

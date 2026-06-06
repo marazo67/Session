@@ -19,15 +19,18 @@ const crypto = require('crypto');
 const PORT = process.env.PORT || 3000;
 const OWNER_PHONE = '27785028986'; // <-- your number (digits only)
 const SESSIONS_DIR = path.join(__dirname, 'sessions');
+const PUBLIC_DIR = path.join(__dirname, 'public'); // <- ADDED
 
+// Ensure both directories exist
 if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true }); // <- FIX
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIO(server);
 
-app.use(express.static(path.join(__dirname, 'public')));
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.use(express.static(PUBLIC_DIR));
+app.get('/', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 // Beautiful web page
 const html = `<!DOCTYPE html>
@@ -121,7 +124,9 @@ const html = `<!DOCTYPE html>
     </script>
 </body>
 </html>`;
-fs.writeFileSync(path.join(__dirname, 'public', 'index.html'), html);
+
+// Now it works because 'public' folder exists
+fs.writeFileSync(path.join(PUBLIC_DIR, 'index.html'), html);
 
 // Main pairing logic
 async function startPairing() {

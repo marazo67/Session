@@ -1,15 +1,23 @@
 {
   "name": "taragon-session-generator",
   "version": "1.0.0",
-  "description": "Generate WhatsApp pairing code and receive session ID",
-  "main": "code.js",
+  "description": "WhatsApp Session Generator for Taragon Bot",
+  "main": "session_generator.js",
   "scripts": {
-    "start": "node code.js"
+    "start": "node session_generator.js",
+    "build": "npm install"
   },
+  "keywords": ["whatsapp", "baileys", "session"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.7",
-    "express": "^4.18.2",
-    "pino": "^8.17.2",
-    "socket.io": "^4.7.4"
+    "@whiskeysockets/baileys": "^6.7.9",
+    "express": "^4.19.2",
+    "pino": "^9.4.0",
+    "socket.io": "^4.7.5"
+  },
+  "engines": {
+    "node": "20.x"
   }
 }
